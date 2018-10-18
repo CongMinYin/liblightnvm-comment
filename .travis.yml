@@ -1,0 +1,55 @@
+sudo: required
+
+language: c
+
+addons:
+  apt:
+    packages:
+    - graphviz
+    - python-pip
+
+services:
+  - docker
+
+env:
+  global:
+    - TAG=liblightnvm
+    - DIST_NAME=ubuntu
+  matrix:
+    - DIST_VERS=18.04 DIST_CODE=bionic
+    - DIST_VERS=16.04 DIST_CODE=xenial
+    - DIST_VERS=14.04 DIST_CODE=trusty
+
+branches:
+  except:
+    - gh-pages
+
+before_install:
+  - echo "** Lets get docking! **"
+  - docker pull ${DIST_NAME}:${DIST_VERS}
+  - docker build --rm=true --file=ci/DockerFile.${DIST_NAME}-${DIST_VERS} --tag=${DIST_NAME}-${DIST_VERS}:${TAG} .
+  - docker run --name ${TAG} -d -t ${DIST_NAME}-${DIST_VERS}:${TAG} /bin/bash > container.id
+  - docker ps -a
+  - docker exec -t ${TAG} hostname
+  - docker exec -t ${TAG} uname -a
+  - docker exec -t ${TAG} cat /etc/lsb-release
+
+before_script:
+  - echo "Fetching checkpatch"
+  - wget "https://raw.githubusercontent.com/torvalds/linux/master/scripts/checkpatch.pl" -O checkpatch.pl
+  - chmod +x checkpatch.pl
+  - ./checkpatch.pl --no-tree -f include/*nvm.h --terse || true
+  - ./checkpatch.pl --no-tree -f include/nvm_*.h --terse || true
+  - ./checkpatch.pl --no-tree -f src/*.c --terse || true
+  - ./checkpatch.pl --no-tree -f examples/*.c --terse || true
+  - ./checkpatch.pl --no-tree -f tests/*.c --terse || true
+
+script:
+  - CONTAINER_ID=$(cat container.id)
+  - docker ps -a
+  - echo "** Build everything"
+  - docker exec -t ${TAG} make configure
+  - docker exec -t ${TAG} make deb_on configure
+  - docker exec -t ${TAG} make
+  - docker exec -t ${TAG} make install-deb
+  - docker stop "${CONTAINER_ID}"
