@@ -17,6 +17,24 @@
  * nvm_cmd_rprt_get_arbs one is written with a constructed payload, then copied
  * to the other chunk, read and buffers compared
  */
+/**
+ * nvm_cmd_copy的最小测试
+ *
+ *要求/取决于：
+ *
+ * - 该设备有两个空闲块
+ * - nvm_cmd_rprt_arbs
+ * - nvm_cmd_write
+ * - nvm_cmd_read
+ * - nvm_buf
+ *
+ *验证：
+ *
+ * - nvm_cmd_copy可以无错误地提交和完成
+ *
+ *调用nvm_cmd_rprt_get_arbs咨询选择两个块，一个源和一个目的地
+ *一个用构造的有效负载写入，然后复制到其他块，读取和缓冲区进行比较
+ */
 #include "test_intf.c"
 
 #define SRC 0

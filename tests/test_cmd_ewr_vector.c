@@ -20,10 +20,12 @@ size_t nvm_buf_diff_qrk(char *expected, char *actual, size_t nbytes,
 	return diff;
 }
 
+// 1.2版本的读写，较为麻烦
 void ewr_s12_1addr(int use_meta)
 {
 	char *buf_w = NULL, *buf_r = NULL, *meta_w = NULL, *meta_r = NULL;
-	const int naddrs = geo->nplanes * geo->nsectors;
+	//一个lun的plane数目乘以一个page的sector数目
+	const int naddrs = geo->nplanes * geo->nsectors;	
 	struct nvm_addr addrs[naddrs];
 	struct nvm_addr blk_addr = { .val = 0 };
 	struct nvm_ret ret;
@@ -32,37 +34,42 @@ void ewr_s12_1addr(int use_meta)
 	int pmode = NVM_FLAG_PMODE_SNGL;
 	int failed = 1;
 
-	// 获得地址blk_addr
+	// 获得空闲地址blk_addr
 	if (nvm_cmd_gbbt_arbs(dev, NVM_BBT_FREE, 1, &blk_addr)) {
 		CU_FAIL("nvm_cmd_gbbt_arbs");
 		goto out;
 	}
 
-	buf_w_nbytes = naddrs * geo->sector_nbytes;
+	buf_w_nbytes = naddrs * geo->sector_nbytes;	//总字节数
 	meta_w_nbytes = naddrs * geo->meta_nbytes;
-	buf_r_nbytes = geo->sector_nbytes;
+	buf_r_nbytes = geo->sector_nbytes;	//每个扇区字节数
 	meta_r_nbytes = geo->meta_nbytes;
 
+	// 申请总字节数的空间，第三个参数大概是物理地址空间的要求，不确定
 	buf_w = nvm_buf_alloc(dev, buf_w_nbytes, NULL);	// Setup buffers
 	if (!buf_w) {
 		CU_FAIL("nvm_buf_alloc");
 		goto out;
 	}
-	nvm_buf_fill(buf_w, buf_w_nbytes);
+	nvm_buf_fill(buf_w, buf_w_nbytes);	//填上随机数
 
+	// 申请元数据缓冲区
 	meta_w = nvm_buf_alloc(dev, meta_w_nbytes, NULL);
 	if (!meta_w) {
 		CU_FAIL("nvm_buf_alloc");
 		goto out;
 	}
+	// 每个字符填充字符
 	for (size_t i = 0; i < meta_w_nbytes; ++i) {
 		meta_w[i] = 65;
 	}
 	for (int i = 0; i < naddrs; ++i) {
 		char meta_descr[meta_w_nbytes];
-		int sec = i % geo->nsectors;
-		int pl = (i / geo->nsectors) % geo->nplanes;
+		int sec = i % geo->nsectors;	//i取余每页的sector数
+		//除以每页的sector数，再取余每个lun中的plane数
+		int pl = (i / geo->nsectors) % geo->nplanes;	
 
+		//将plane号和sector号填入数组
 		sprintf(meta_descr, "[P(%02d),S(%02d)]", pl, sec);
 		if (strlen(meta_descr) > geo->meta_nbytes) {
 			CU_FAIL("Failed constructing meta buffer");
@@ -73,18 +80,21 @@ void ewr_s12_1addr(int use_meta)
 		       strlen(meta_descr));
 	}
 
+	// 申请一个扇区的字节数
 	buf_r = nvm_buf_alloc(dev, buf_r_nbytes, NULL);
 	if (!buf_r) {
 		CU_FAIL("nvm_buf_alloc");
 		goto out;
 	}
 
+	// 申请一个OOB的字节数
 	meta_r = nvm_buf_alloc(dev, meta_r_nbytes, NULL);
 	if (!meta_r) {
 		CU_FAIL("nvm_buf_alloc");
 		goto out;
 	}
 
+	// 地址赋值，后面应该使用的是addr
 	if (pmode) {
 		addrs[0].ppa = blk_addr.ppa;
 	} else {
@@ -95,6 +105,7 @@ void ewr_s12_1addr(int use_meta)
 		}
 	}
 
+	// 先擦除
 	res = nvm_cmd_erase(dev, addrs, pmode ? 1 : geo->nplanes, NULL, pmode,
 			    &ret);
 	if (res < 0) {
@@ -102,6 +113,11 @@ void ewr_s12_1addr(int use_meta)
 		goto out;
 	}
 
+	// 外层循环geo->npages是一个block的page数量
+	// 内层循环naddr是一个lun的plane数目乘以一个page的sector数目
+	// 最后的结果是写满1个lun，目的可能是并行，plane可以并行，并行度为一个lun的plane数
+	// 一次写命令写入naddr的扇区数目
+	// plane和lun的关系应该是横竖交叉的关系，都可以并行，并非包含
 	for (size_t pg = 0; pg < geo->npages; ++pg) {
 		for (int i = 0; i < naddrs; ++i) {
 			addrs[i].ppa = blk_addr.ppa;
@@ -118,10 +134,12 @@ void ewr_s12_1addr(int use_meta)
 		}
 	}
 
+	// 读取是三层循环，plane层循环放中间也是为了并行性
 	for (size_t pg = 0; pg < geo->npages; ++pg) {
 		for (size_t pl = 0; pl < geo->nplanes; ++pl) {
 			for (size_t sec = 0; sec < geo->nsectors; ++sec) {
 				struct nvm_addr addr;
+				// 地址计算，尚未仔细阅读，应当是与写入地址匹配
 				size_t buf_diff = 0, meta_diff = 0;
 
 				int bw_offset = sec * geo->sector_nbytes + \
@@ -140,6 +158,7 @@ void ewr_s12_1addr(int use_meta)
 				if (use_meta)
 					memset(meta_r, 0, meta_r_nbytes);
 
+				// 读取一个sector
 				res = nvm_cmd_read(dev, &addr, 1, buf_r,
 						    use_meta ? meta_r : NULL, pmode, &ret);
 				if (res < 0) {
@@ -147,6 +166,7 @@ void ewr_s12_1addr(int use_meta)
 					goto out;
 				}
 
+				// 比较读取的内容和写入的内容
 				buf_diff = nvm_buf_diff_qrk(buf_r,
 							    buf_w + bw_offset,
 							    buf_r_nbytes,
@@ -222,6 +242,7 @@ void test_EWR_S12_1ADDR_META1_SNGL(void)
 	}
 }
 
+// 带模式的1,2版本的擦除读写
 void ewr_s12_naddr(int use_meta, int pmode)
 {
 	const int naddrs = geo->nplanes * geo->nsectors;
@@ -344,6 +365,7 @@ out:
 	return;
 }
 
+// 单元测试代码
 void test_EWR_S12_NADDR_META0_SNGL(void)
 {
 	switch(nvm_dev_get_verid(dev)) {
@@ -457,6 +479,7 @@ void test_EWR_S12_NADDR_META1_QUAD(void)
 }
 
 // Erase, write, and read an single chunk
+// 2.0版本的擦除 写 读单个chunk 
 static void ewr_s20(int use_rwmeta, int use_erase_meta)
 {
 	const int naddrs = nvm_dev_get_ws_min(dev);
@@ -467,17 +490,20 @@ static void ewr_s20(int use_rwmeta, int use_erase_meta)
 	struct nvm_addr chunk_addr = { .val = 0 };
 	ssize_t res;
 
+	// 获取1块空闲块地址
 	if (nvm_cmd_rprt_arbs(dev, NVM_CHUNK_STATE_FREE, 1, &chunk_addr)) {
 		CU_FAIL("nvm_cmd_rprt_arbs");
 		goto out;
 	}
 
+	// 申请缓冲区
 	bufs = nvm_buf_set_alloc(dev, naddrs * geo->l.nbytes,
 				 use_rwmeta ? naddrs * geo->l.nbytes_oob : 0);
 	if (!bufs) {
 		CU_FAIL("nvm_buf_set_alloc");
 		goto out;
 	}
+	// 填充随机数据到缓冲区
 	nvm_buf_set_fill(bufs);
 
 	if (use_erase_meta) {
@@ -488,6 +514,7 @@ static void ewr_s20(int use_rwmeta, int use_erase_meta)
 		}
 	}
 
+	// 擦除块
 	res = nvm_cmd_erase(dev, &chunk_addr, 1, erase_meta, 0x0, &ret); ///< Erase
 	if (res < 0) {
 		CU_FAIL("Erase failure");
@@ -502,6 +529,9 @@ static void ewr_s20(int use_rwmeta, int use_erase_meta)
 	}
 
 								///< Write
+	// 写入数据，一次是最小写入扇区
+	// 外层循环是一个chunk的sector数量，跳跃长度为naddrs，最小写入扇区
+	// 内层小循环得到一组扇区的地址，最小写入扇区
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += naddrs) {
 		for (int i = 0; i < naddrs; ++i) {
 			addrs[i].val = chunk_addr.val;
@@ -516,6 +546,7 @@ static void ewr_s20(int use_rwmeta, int use_erase_meta)
 	}
 
 								///< Read
+	// 写入的反过程
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += naddrs) {
 		size_t buf_diff = 0;
 		size_t meta_diff = 0;
@@ -536,6 +567,8 @@ static void ewr_s20(int use_rwmeta, int use_erase_meta)
 			goto out;
 		}
 
+		// 内容比较，后面两个参数不懂，OOB是什么一直不懂，qrk为4
+		// 但比较代码很好懂，就是跳跃比较，这个不是重点
 		buf_diff = nvm_buf_diff_qrk(bufs->read, bufs->write, bufs->nbytes,
 					    geo->l.nbytes_oob,
 					    NBYTES_QRK);

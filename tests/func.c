@@ -9,10 +9,20 @@ liblightnvm	    OCSSD 1.2	        OCSSD 2.0
 PUGRP	        Channel	Parallel    Unit Group
 PUNIT	        LUN / die	        Parallel Unit
 CHUNK	        Block	            Chunk
-Plane	
-Page	
+                Plane	
+                Page	
 SECTR	        Sector	            Logical Block
 */
+// 1.2的组织形式比较麻烦，读写地址组织很麻烦，2.0简单很多
+// 读写的操作单位都是扇区sector，擦除单位为块chunk
+// 主要函数有四个，测试中，每获取一个空闲块随机进行擦除再写读，虚拟机中，第一次使用，应该可以不用先擦除
+{
+    nvm_cmd_rprt_arbs 
+    nvm_cmd_erase 
+    nvm_cmd_write
+    nvm_cmd_read
+}
+
 
 // 函数描述格式，其中英文描述摘抄自http://lightnvm.io/liblightnvm/capi/index.htm，与liblightnvm.h中注释相同
 /* Description:
@@ -31,12 +41,12 @@ SECTR	        Sector	            Logical Block
  * test_intf.c
  * test_cmd_erase.c
  * test_cmd_ewr_scalar.c
- * 
+ * test_cmd_ewr_vector.c
  */
 
 /* 问题记录
  * -[x] nvm_cmd_erase擦除函数中向量和标量模式有什么区别，已解决，是否用参数带出块描述报告
- * 
+ * -[ ] OOB是什么，跟meta有关
  * 
  * 
  */
@@ -126,7 +136,7 @@ nvm_vblk_write(vblk, bufs->write, nbytes)
  */
 int nvm_cmd_erase(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, void * meta, uint16_t flags, struct nvm_ret * ret)
 ssize_t res = nvm_cmd_erase(dev, chunk_addrs, naddrs, updated, erase_mode, &ret);   //update为块描述报告结构体，内容为空
-
+res = nvm_cmd_erase(dev, &chunk_addr, 1, erase_meta, 0x0, &ret);
 //最小写入扇区数
 const int naddrs = nvm_dev_get_ws_min(dev);	
 
@@ -139,7 +149,7 @@ const int naddrs = nvm_dev_get_ws_min(dev);
  */
 int nvm_cmd_write(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, const void * data, const void * meta, uint16_t flags, struct nvm_ret * ret)
 ssize_t res = nvm_cmd_write(dev, &addr, naddrs, bufs->write, bufs->write_meta, NVM_CMD_SCALAR, &ret);
-
+res = nvm_cmd_write(dev, addrs, naddrs, bufs->write, bufs->write_meta, 0x0, &ret);
 /* Description:
  * 描述：读操作函数
  * 输入：同上    
