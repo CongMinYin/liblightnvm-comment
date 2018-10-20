@@ -43,25 +43,31 @@
 
 int cmd_copy(int cmd_opt)
 {
+	// 获取最小写入扇区数
 	const size_t io_nsectr = nvm_dev_get_ws_opt(dev);
+	// 一个chunk中的字节数
 	size_t bufs_nbytes = geo->l.nsectr * geo->l.nbytes;
 	struct nvm_buf_set *bufs = NULL;
-	struct nvm_addr chunks[NCHUNKS];
+	struct nvm_addr chunks[NCHUNKS];	//N个chunk地址数组
 	int res = -1;
 
+	// 获取NCHUNKS个空闲chunk地址数组
 	if (nvm_cmd_rprt_arbs(dev, NVM_CHUNK_STATE_FREE, NCHUNKS, chunks)) {
 		CU_FAIL("nvm_cmd_rprt_arbs");
 		goto exit;
 	}
 
+	// 申请缓冲区，大小为一个chunk的字节数
 	bufs = nvm_buf_set_alloc(dev, bufs_nbytes, 0);
 	if (!bufs) {
 		CU_FAIL("nvm_buf_set_alloc");
 		goto exit;
 	}
-	nvm_buf_set_fill(bufs);
+	nvm_buf_set_fill(bufs);	// 填充缓冲区
 
+	// 循环总长为一个chunk的sector数，步长是最小写入扇区数
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += io_nsectr) {
+		// sec步长与sector的字节相乘，得到最小写入字节数
 		const size_t buf_ofz = sectr * geo->l.nbytes;
 		struct nvm_addr src[io_nsectr];
 
