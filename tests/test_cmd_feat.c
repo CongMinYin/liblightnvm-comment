@@ -1,5 +1,12 @@
 #include "test_intf.c"
 
+/* Description:
+ * 描述：测试两个函数，nvm_cmd_sfeat和nvm_cmd_gfeat
+ * 输入：    
+ * 输出：ret 特征信息
+ * 返回：0 -1
+ */
+
 static void set_error_recovery(bool on)
 {
 	union nvm_spec_feat feat = { 0 };

@@ -43,7 +43,7 @@
 
 int cmd_copy(int cmd_opt)
 {
-	// 获取最小写入扇区数
+	// 获取最佳写入扇区数
 	const size_t io_nsectr = nvm_dev_get_ws_opt(dev);
 	// 一个chunk中的字节数
 	size_t bufs_nbytes = geo->l.nsectr * geo->l.nbytes;
@@ -65,17 +65,19 @@ int cmd_copy(int cmd_opt)
 	}
 	nvm_buf_set_fill(bufs);	// 填充缓冲区
 
-	// 循环总长为一个chunk的sector数，步长是最小写入扇区数
+	// 循环总长为一个chunk的sector数，步长是最佳写入扇区数
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += io_nsectr) {
-		// sec步长与sector的字节相乘，得到最小写入字节数
+		// sec步长与sector的字节相乘，得到最佳写入字节数
 		const size_t buf_ofz = sectr * geo->l.nbytes;
-		struct nvm_addr src[io_nsectr];
+		struct nvm_addr src[io_nsectr];	//扇区地址数组
 
+		// 填入地址信息，chunk号和扇区号
 		for (size_t idx = 0; idx < io_nsectr; ++idx) {
-			src[idx] = chunks[SRC];
+			src[idx] = chunks[SRC];	// 0
 			src[idx].l.sectr = sectr + idx;
 		}
 
+		// 一次写入io_nsectr个扇区的数据，数据在bufs->write中随机填写
 		res = nvm_cmd_write(dev, src, io_nsectr,
 				    bufs->write + buf_ofz, NULL,
 				    cmd_opt, NULL);
@@ -85,6 +87,7 @@ int cmd_copy(int cmd_opt)
 		}
 	}
 
+	// copy函数，将上面0号chunk的数据复制到1号chunk，内部实现没懂，感觉没实现，会返回-1，输出fail
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += io_nsectr) {
 		struct nvm_addr src[io_nsectr];
 		struct nvm_addr dst[io_nsectr];
@@ -97,6 +100,7 @@ int cmd_copy(int cmd_opt)
 			dst[idx].l.sectr = sectr + idx;
 		}
 
+		//这里调用了绑定的函数，具体实现没找到，不知道实现没有，只有个返回-1的函数
 		res = nvm_cmd_copy(dev, src, dst, io_nsectr, 0, NULL);
 		if (res < 0) {
 			CU_FAIL("nvm_cmd_copy");
@@ -104,6 +108,7 @@ int cmd_copy(int cmd_opt)
 		}
 	}
 
+	// 读取1号chunk的数据
 	for (size_t sectr = 0; sectr < geo->l.nsectr; sectr += io_nsectr) {
 		const size_t buf_ofz = sectr * geo->l.nbytes;
 		struct nvm_addr dst[io_nsectr];

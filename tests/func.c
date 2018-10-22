@@ -42,6 +42,7 @@ SECTR	        Sector	            Logical Block
  * test_cmd_erase.c
  * test_cmd_ewr_scalar.c
  * test_cmd_ewr_vector.c
+ * test_cmd_copy.c  //简单易懂，2.0版本
  */
 
 /* 问题记录
@@ -76,6 +77,43 @@ nvm_dev_close(dev);
 int nvm_cmd_rprt_arbs(struct nvm_dev * dev, int cs, int naddrs, struct nvm_addr addrs[])
 nvm_cmd_rprt_arbs(dev, NVM_CHUNK_STATE_FREE, naddrs, chunk_addrs)
 
+
+//最小写入扇区数
+const int naddrs = nvm_dev_get_ws_min(dev);	
+// 获取最佳写入扇区数
+const size_t io_nsectr = nvm_dev_get_ws_opt(dev);
+
+/* Description:Execute an Open-Channel 1.2 erase / Open-Channel 2.0 reset command.
+ * 描述：擦除一组块
+ * 输入：flags:擦除模式，有两种NVM_CMD_SCALAR，NVM_CMD_VECTOR 标量和向量
+ *      向量模式多一个元数据void *NVM_UNUSED(meta)参数，用nvm_spec_rprt_descr结构带回块描述报告
+ * 输出：meta 
+ * 返回：0 -1
+ */
+int nvm_cmd_erase(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, void * meta, uint16_t flags, struct nvm_ret * ret)
+ssize_t res = nvm_cmd_erase(dev, chunk_addrs, naddrs, updated, erase_mode, &ret);   //update为块描述报告结构体，内容为空
+res = nvm_cmd_erase(dev, &chunk_addr, 1, erase_meta, 0x0, &ret);
+
+/* Description:
+ * 描述：写操作函数
+ * 输入：写入地址addr组，最小扇区数naddrs，写入缓冲区bufs->write，
+ *      元数据写入缓冲区bufs->write_meta，写入模式NVM_CMD_SCALAR  
+ * 输出：ret 
+ * 返回：0 -1
+ */
+int nvm_cmd_write(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, const void * data, const void * meta, uint16_t flags, struct nvm_ret * ret)
+ssize_t res = nvm_cmd_write(dev, &addr, naddrs, bufs->write, bufs->write_meta, NVM_CMD_SCALAR, &ret);
+res = nvm_cmd_write(dev, addrs, naddrs, bufs->write, bufs->write_meta, 0x0, &ret);
+
+/* Description:
+ * 描述：读操作函数
+ * 输入：同上    
+ * 输出：ret
+ * 返回：0 -1
+ */
+int nvm_cmd_read(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, void * data, void * meta, uint16_t flags, struct nvm_ret * ret)
+ssize_t res = nvm_cmd_read(dev, &addr, naddrs, bufs->read, bufs->read_meta, NVM_CMD_SCALAR, &ret);
+
 /* Description:Executes one or multiple Open-Channel 2.0 get-log-page for chunk-information.
  * 
  * 描述：获取1个chunk信息
@@ -104,18 +142,6 @@ struct nvm_vblk *vblk = nvm_vblk_alloc(dev, chunk_addrs, naddrs)
  */
 size_t nbytes = nvm_vblk_get_nbytes(vblk);
 
-//内部调用bufs->write = nvm_buf_alloc(dev, bufs->nbytes, NULL)；和read
-//和bufs->write_meta = nvm_buf_alloc(dev, bufs->nbytes_meta, NULL);和read
-//第3个参数是0，所以不调用第二个函数，如果第2个参数是0，不调用第一个，返回buf
-//主要用于测试
-struct nvm_buf_set *bufs = nvm_buf_set_alloc(dev, nbytes, 0);
-
-
-//调用nvm_buf_fill(bufs->write, bufs->nbytes)写入随机数据
-//调用memset(bufs->read, 0, bufs->nbytes);将read部分设置为0
-//主要用于测试
-nvm_buf_set_fill(bufs);
-
 /* Description:Write to a virtual block.
  * 描述：将数据写入vblk
  * 输入：vblk: The virtual block to write to   
@@ -127,37 +153,17 @@ nvm_buf_set_fill(bufs);
 ssize_t nvm_vblk_write(struct nvm_vblk * vblk, const void * buf, size_t count)
 nvm_vblk_write(vblk, bufs->write, nbytes)
 
-/* Description:Execute an Open-Channel 1.2 erase / Open-Channel 2.0 reset command.
- * 描述：擦除一组块
- * 输入：flags:擦除模式，有两种NVM_CMD_SCALAR，NVM_CMD_VECTOR 标量和向量
- *      向量模式多一个元数据void *NVM_UNUSED(meta)参数，用nvm_spec_rprt_descr结构带回块描述报告
- * 输出：meta 
- * 返回：0 -1
- */
-int nvm_cmd_erase(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, void * meta, uint16_t flags, struct nvm_ret * ret)
-ssize_t res = nvm_cmd_erase(dev, chunk_addrs, naddrs, updated, erase_mode, &ret);   //update为块描述报告结构体，内容为空
-res = nvm_cmd_erase(dev, &chunk_addr, 1, erase_meta, 0x0, &ret);
-//最小写入扇区数
-const int naddrs = nvm_dev_get_ws_min(dev);	
+//内部调用bufs->write = nvm_buf_alloc(dev, bufs->nbytes, NULL)；和read
+//和bufs->write_meta = nvm_buf_alloc(dev, bufs->nbytes_meta, NULL);和read
+//第3个参数是0，所以不调用第二个函数，如果第2个参数是0，不调用第一个，返回buf
+//主要用于测试
+struct nvm_buf_set *bufs = nvm_buf_set_alloc(dev, nbytes, 0);
 
-/* Description:
- * 描述：写操作函数
- * 输入：写入地址addr组，最小扇区数naddrs，写入缓冲区bufs->write，
- *      元数据写入缓冲区bufs->write_meta，写入模式NVM_CMD_SCALAR  
- * 输出：ret 
- * 返回：0 -1
- */
-int nvm_cmd_write(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, const void * data, const void * meta, uint16_t flags, struct nvm_ret * ret)
-ssize_t res = nvm_cmd_write(dev, &addr, naddrs, bufs->write, bufs->write_meta, NVM_CMD_SCALAR, &ret);
-res = nvm_cmd_write(dev, addrs, naddrs, bufs->write, bufs->write_meta, 0x0, &ret);
-/* Description:
- * 描述：读操作函数
- * 输入：同上    
- * 输出：ret
- * 返回：0 -1
- */
-int nvm_cmd_read(struct nvm_dev * dev, struct nvm_addr addrs[], int naddrs, void * data, void * meta, uint16_t flags, struct nvm_ret * ret)
-ssize_t res = nvm_cmd_read(dev, &addr, naddrs, bufs->read, bufs->read_meta, NVM_CMD_SCALAR, &ret);
+
+//调用nvm_buf_fill(bufs->write, bufs->nbytes)写入随机数据
+//调用memset(bufs->read, 0, bufs->nbytes);将read部分设置为0
+//主要用于测试
+nvm_buf_set_fill(bufs);
 
 //比较读写内容是否相同
 size_t buf_diff = nvm_buf_diff(bufs->read, bufs->write, bufs->nbytes);
