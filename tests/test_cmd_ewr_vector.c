@@ -20,7 +20,7 @@ size_t nvm_buf_diff_qrk(char *expected, char *actual, size_t nbytes,
 	return diff;
 }
 
-// 1.2版本的读写，较为麻烦
+// 1.2版本的读写，较为麻烦，感觉比2.0版本有较高并行度
 void ewr_s12_1addr(int use_meta)
 {
 	char *buf_w = NULL, *buf_r = NULL, *meta_w = NULL, *meta_r = NULL;
@@ -34,18 +34,18 @@ void ewr_s12_1addr(int use_meta)
 	int pmode = NVM_FLAG_PMODE_SNGL;
 	int failed = 1;
 
-	// 获得空闲地址blk_addr
+	// 获得空闲地址blk_addr，获取的地址是块block
 	if (nvm_cmd_gbbt_arbs(dev, NVM_BBT_FREE, 1, &blk_addr)) {
 		CU_FAIL("nvm_cmd_gbbt_arbs");
 		goto out;
 	}
 
-	buf_w_nbytes = naddrs * geo->sector_nbytes;	//总字节数
+	buf_w_nbytes = naddrs * geo->sector_nbytes;	//buf的字节数，
 	meta_w_nbytes = naddrs * geo->meta_nbytes;
-	buf_r_nbytes = geo->sector_nbytes;	//每个扇区字节数
+	buf_r_nbytes = geo->sector_nbytes;	//每个扇区字节数，用于读
 	meta_r_nbytes = geo->meta_nbytes;
 
-	// 申请总字节数的空间，第三个参数大概是物理地址空间的要求，不确定
+	// 申请总字节数的空间，用于写
 	buf_w = nvm_buf_alloc(dev, buf_w_nbytes, NULL);	// Setup buffers
 	if (!buf_w) {
 		CU_FAIL("nvm_buf_alloc");
@@ -59,7 +59,7 @@ void ewr_s12_1addr(int use_meta)
 		CU_FAIL("nvm_buf_alloc");
 		goto out;
 	}
-	// 每个字符填充字符
+	// 填充，无视，65是A
 	for (size_t i = 0; i < meta_w_nbytes; ++i) {
 		meta_w[i] = 65;
 	}
@@ -80,7 +80,7 @@ void ewr_s12_1addr(int use_meta)
 		       strlen(meta_descr));
 	}
 
-	// 申请一个扇区的字节数
+	// 申请一个扇区的字节数，用于读
 	buf_r = nvm_buf_alloc(dev, buf_r_nbytes, NULL);
 	if (!buf_r) {
 		CU_FAIL("nvm_buf_alloc");
@@ -94,7 +94,7 @@ void ewr_s12_1addr(int use_meta)
 		goto out;
 	}
 
-	// 地址赋值，后面应该使用的是addr
+	// 地址赋值，此处应该是0，所以是else
 	if (pmode) {
 		addrs[0].ppa = blk_addr.ppa;
 	} else {
@@ -105,7 +105,7 @@ void ewr_s12_1addr(int use_meta)
 		}
 	}
 
-	// 先擦除
+	// 先擦除，如果是获取的空闲块，在femu中应该不用擦除
 	res = nvm_cmd_erase(dev, addrs, pmode ? 1 : geo->nplanes, NULL, pmode,
 			    &ret);
 	if (res < 0) {
@@ -242,7 +242,7 @@ void test_EWR_S12_1ADDR_META1_SNGL(void)
 	}
 }
 
-// 带模式的1,2版本的擦除读写
+// 带模式的1.2版本的擦除读写
 void ewr_s12_naddr(int use_meta, int pmode)
 {
 	const int naddrs = geo->nplanes * geo->nsectors;
