@@ -178,8 +178,8 @@ int main(int argc, char **argv)
 	printf("----------test1-----------\n"); 
 	ewr_s12_1addr(0);
 	printf("\n");
-	printf("----------test2-----------\n"); 
-	ewr_s12_1addr(1);
+	//printf("----------test2-----------\n"); 
+	//ewr_s12_1addr(1);
 
 	teardown();
 
